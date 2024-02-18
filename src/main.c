@@ -11,13 +11,12 @@ typedef struct node_t {
   size_t size;
 } node_t;
 
-static node_t base;
-static node_t *freep;
-static node_t *usedp;
+static node_t *freep = NULL;
+static node_t *usedp = NULL;
 
 node_t *req_memory(size_t bytes) {
 
-  printf("Requesting %ld bytes from the OS\n", bytes);
+  // printf("Requesting %ld bytes from the OS\n", bytes);
 
   if (bytes <= 0) {
     return NULL;
@@ -36,85 +35,111 @@ node_t *req_memory(size_t bytes) {
   node_t *new_node = (node_t *)p;
   new_node->size = mem_alloc;
 
-  printf("OS allocated %ld bytes\n", mem_alloc);
+  // printf("OS allocated %ld bytes\n", mem_alloc);
 
   return new_node;
 }
 
 void free_list_add(node_t *node) {
 
-  printf("Adding node %p (%ld bytes) to free list\n", node, node->size);
+  // printf("Adding node %p (%ld bytes) to free list\n", node, node->size);
 
   if (freep == NULL) {
-    freep = node->next = node;
+    freep = node;
     return;
   }
 
-  node_t *p;
+  node_t *prev = NULL;
+  node_t *curr = freep;
 
-  for (p = freep;; p = p->next) {
-    printf("%p %p %p\n", p, p->next, node);
-    break;
-    if (node > p && node < p->next)
-      break;
-    // required if free list becomes circular (wraps around)
-    if (p >= p->next && (node > p || node < p->next))
+  for (; curr != NULL; prev = curr, curr = curr->next) {
+    if (node > curr && (curr->next != NULL && node < curr->next))
       break;
   }
 
-  if (p->next) {
-    if (node + node->size == p->next) {
+  if (curr == NULL) {
+    prev->next = node;
+    return;
+  }
+
+  if (curr->next) {
+    if (node + node->size == curr->next) {
       // merge node with p->next
-      node->size += p->next->size;
-      node->next = p->next->next;
+      node->size += curr->next->size;
+      node->next = curr->next->next;
     } else {
-      node->next = p->next;
+      node->next = curr->next;
     }
   }
 
-  if (p + p->size == node) {
+  if (curr + curr->size == node) {
     // merge p with node
-    p->size += node->size;
-    p->next = node->next;
+    curr->size += node->size;
+    curr->next = node->next;
   } else {
-    p->next = node;
+    curr->next = node;
   }
-
-  printf("%p", p);
-  freep = p;
 }
 
-// Extract a node of size `bytes`. The extracted node can be:
-//  - current node
-//  - a cut out of the current node
-node_t *extract_node(node_t *curr, node_t *prev, size_t bytes) {
-  if (curr->size > bytes) {
-    // split the current node by keeping `bytes` to it
-    // convert it to char* to move by bytes
+void used_list_add(node_t *node) {
+  // printf("Adding %p (%zu bytes) to used list\n", node, node->size);
+  // update used list pointer
+  if (usedp == NULL) {
+    node->next = NULL;
+    usedp = node;
+  } else {
+    node->next = usedp->next;
+    usedp->next = node;
+  }
+}
+
+void extract_node(node_t *curr, node_t *prev, size_t bytes) {
+  if (curr->size - bytes > sizeof(node_t)) {
+    // only split the node if the new_node has enough bytes
+    // to hold itself and the data
+    // otherwise, extract the large node without splitting
     node_t *new_node = (node_t *)((char *)curr + bytes);
     new_node->size = curr->size - bytes;
     new_node->next = curr->next;
 
-    printf("%ld\n", new_node->size);
-
     curr->size = bytes;
-    curr->next = new_node;
 
-    printf("Split node into %p (%ld bytes) and %p (%ld bytes)\n", curr,
-           curr->size, new_node, new_node->size);
+    // printf("Split node into %p (%ld bytes) and %p (%ld bytes)\n", curr,
+    //        curr->size, new_node, new_node->size);
 
-    free_list_add(new_node);
+    if (prev != NULL)
+      prev->next = new_node;
+    else
+      freep = new_node;
   }
-  if (prev != NULL)
-    prev->next = curr->next;
-  else
-    freep = curr->next;
 
-  return curr;
+  if (curr == freep) {
+    freep = freep->next;
+  }
+
+  used_list_add(curr);
+}
+
+void free_list_view() {
+  printf("FREE LIST VIEW===========\n");
+  for (node_t *p = freep; p != NULL; p = p->next) {
+    printf("(%p - %zu bytes) ", p, p->size);
+  }
+  printf("\n");
+}
+
+void used_list_view() {
+  printf("USED LIST VIEW===========\n");
+  for (node_t *p = usedp; p != NULL; p = p->next) {
+    printf("(%p - %zu bytes) ", p, p->size);
+  }
+  printf("\n");
 }
 
 void *vsgc_malloc(size_t bytes) {
   // need extra block to store the node information
+  printf("\nUser requested %zu bytes\n", bytes);
+
   bytes += sizeof(node_t);
 
   node_t *prev = NULL;
@@ -123,12 +148,13 @@ void *vsgc_malloc(size_t bytes) {
   while (curr != NULL) {
     if (curr->size >= bytes) {
       extract_node(curr, prev, bytes);
+      break;
     }
     prev = curr;
     curr = curr->next;
   }
 
-  if (curr == freep) {
+  if (curr == NULL) {
     // request more memory
     curr = req_memory(bytes);
 
@@ -138,19 +164,32 @@ void *vsgc_malloc(size_t bytes) {
     extract_node(curr, prev, bytes);
   }
 
-  if (usedp == NULL) {
-    usedp = curr->next = curr;
-  } else {
-    curr->next = usedp->next;
-    usedp->next = curr;
-  }
+  free_list_view();
+  used_list_view();
 
   return (void *)(curr + 1);
 }
 
 int main() {
   char *p = (char *)vsgc_malloc(20);
-  strcpy(p, "hello");
-  printf("%p %s\n", p, p);
-  printf("%zu\n", ((node_t *)p - 1)->size);
+  // strcpy(p, "hello");
+  // printf("%p %s\n", p, p);
+  // printf("%zu\n", ((node_t *)p - 1)->size);
+
+  char *q = (char *)vsgc_malloc(5);
+  // strcpy(q, "hi");
+  // printf("%p %s\n", q, q);
+
+  char *a = (char *)vsgc_malloc(1);
+  // strcpy(a, "h");
+  // printf("%p %s\n", a, a);
+
+  char *b = (char *)vsgc_malloc(16);
+  // strcpy(b, "hisomeone");
+  // printf("%p %s\n", b, b);
+  //
+  char *c = (char *)vsgc_malloc(1000);
+  char *d = (char *)vsgc_malloc(10);
+  char *e = (char *)vsgc_malloc(5000);
+  char *f = (char *)vsgc_malloc(2500);
 }

@@ -188,26 +188,38 @@ void *vsgc_malloc(size_t bytes) {
   return (void *)(curr + 1);
 }
 
+void mem_free(void* p) {
+  node_t* node = (node_t*)p - 1;
+
+  node_t* prev = NULL;
+  node_t* curr = usedp;
+
+  while (curr != NULL) {
+    if (curr == node) {
+      if (prev != NULL)
+        prev->next = curr->next;
+      else {
+        usedp = curr->next;
+      }
+
+      curr->next = NULL;
+      free_list_add(curr);
+      break;
+    }
+
+    prev = curr;
+    curr = curr->next;
+  }
+
+  printf("===============After free================\n");
+  free_list_view();
+  used_list_view();
+}
 int main() {
-  char *p = (char *)vsgc_malloc(20);
-  // strcpy(p, "hello");
-  // printf("%p %s\n", p, p);
-  // printf("%zu\n", ((node_t *)p - 1)->size);
-
-  char *q = (char *)vsgc_malloc(5);
-  // strcpy(q, "hi");
-  // printf("%p %s\n", q, q);
-
-  char *a = (char *)vsgc_malloc(1);
-  // strcpy(a, "h");
-  // printf("%p %s\n", a, a);
-
-  char *b = (char *)vsgc_malloc(16);
-  // strcpy(b, "hisomeone");
-  // printf("%p %s\n", b, b);
-  //
-  char *c = (char *)vsgc_malloc(1000);
-  char *d = (char *)vsgc_malloc(10);
-  char *e = (char *)vsgc_malloc(5000);
-  char *f = (char *)vsgc_malloc(2500);
+  node_t* a = mem_alloc(46);
+  node_t* b = mem_alloc(97);
+  mem_free(b);
+  mem_free(a);
+  node_t* c = mem_alloc(68);
+  mem_free(c);
 }

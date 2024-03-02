@@ -14,6 +14,12 @@ typedef struct node_t {
 static node_t *freep = NULL;
 static node_t *usedp = NULL;
 
+
+size_t aligned(size_t bytes) {
+  // round it off by closest multiple of word size not less than bytes
+  return (bytes + sizeof(uintptr_t) - 1) & ~(sizeof(uintptr_t) - 1);
+}
+
 node_t *req_memory(size_t bytes) {
 
   // printf("Requesting %ld bytes from the OS\n", bytes);
@@ -52,8 +58,20 @@ void free_list_add(node_t *node) {
   node_t *prev = NULL;
   node_t *curr = freep;
 
+  if (node < curr) {
+    if ((char*) node + node->size == (char*)curr) {
+      node->size += curr->size;
+      node->next = curr->next;
+    } else {
+      node->next = curr;
+    }
+
+    freep = node;
+    return;
+  }
+
   for (; curr != NULL; prev = curr, curr = curr->next) {
-    if (node > curr && (curr->next != NULL && node < curr->next))
+    if (node > curr)
       break;
   }
 
@@ -63,7 +81,7 @@ void free_list_add(node_t *node) {
   }
 
   if (curr->next) {
-    if (node + node->size == curr->next) {
+    if ((char*) node + node->size == (char*) curr->next) {
       // merge node with p->next
       node->size += curr->next->size;
       node->next = curr->next->next;
@@ -72,7 +90,7 @@ void free_list_add(node_t *node) {
     }
   }
 
-  if (curr + curr->size == node) {
+  if ((char*) curr + curr->size == (char*) node) {
     // merge p with node
     curr->size += node->size;
     curr->next = node->next;

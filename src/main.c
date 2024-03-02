@@ -139,7 +139,7 @@ void extract_node(node_t *curr, node_t *prev, size_t bytes) {
 }
 
 void free_list_view() {
-  printf("FREE LIST VIEW===========\n");
+  printf("=Free list=\n");
   for (node_t *p = freep; p != NULL; p = p->next) {
     printf("(%p - %zu bytes) ", p, p->size);
   }
@@ -147,18 +147,21 @@ void free_list_view() {
 }
 
 void used_list_view() {
-  printf("USED LIST VIEW===========\n");
+  printf("=Used list=\n");
   for (node_t *p = usedp; p != NULL; p = p->next) {
     printf("(%p - %zu bytes) ", p, p->size);
   }
   printf("\n");
 }
 
-void *vsgc_malloc(size_t bytes) {
+void *mem_alloc(size_t bytes) {
   // need extra block to store the node information
   printf("\nUser requested %zu bytes\n", bytes);
 
   bytes += sizeof(node_t);
+  bytes = aligned(bytes);
+
+  printf("Total memory-aligned bytes including header is %zu\n", bytes);
 
   node_t *prev = NULL;
   node_t *curr = freep;
@@ -182,6 +185,7 @@ void *vsgc_malloc(size_t bytes) {
     extract_node(curr, prev, bytes);
   }
 
+  printf("===============After alloc===============\n");
   free_list_view();
   used_list_view();
 
